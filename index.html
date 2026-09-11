@@ -180,6 +180,7 @@ function lensDrops(n){
   }
 }
 function resolveDrop(hit){
+  S.drops++;
   const energy=hit.vy*(1-hit.centerDist*0.8);
   const safe=hit.usePaper?energy<9:energy<4.5;
   ripple(hit.x,hit.z,!safe);
