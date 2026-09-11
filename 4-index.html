@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Poseidon's Kiss - Splash Physics Simulator</title>
+<meta name="description" content="A rigorous study of splash dynamics. Keep the throne dry.">
+<style>
+:root{--bg:#0b1220;--ink:#cfe3f5;--dim:#5b7590;--accent:#38bdf8;--line:#1c2c42;--card:#101a2c}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+#scene{position:fixed;inset:0}
+#scene canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;align-items:center}
+h1{font-size:clamp(18px,3.2vw,26px);letter-spacing:6px;color:var(--accent);text-transform:uppercase;margin-top:22px;text-align:center}
+.sub{color:var(--dim);letter-spacing:2.5px;font-size:10.5px;text-transform:uppercase;margin-top:6px;text-align:center}
+#hud{font-size:12px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;text-align:center;line-height:2;margin-top:14px}
+#hud b{color:var(--accent)}
+#verdict{position:absolute;bottom:108px;left:0;right:0;font-size:14px;color:var(--ink);text-align:center;padding:0 20px}
+#controls{position:absolute;bottom:52px;left:0;right:0;display:flex;gap:10px;flex-wrap:wrap;justify-content:center;pointer-events:auto}
+button{cursor:pointer;background:rgba(16,26,44,.85);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-family:inherit;font-size:13px;transition:border-color .15s}
+button:hover{border-color:var(--accent)}
+button small{display:block;font-size:10px;color:var(--dim)}
+#log{position:absolute;bottom:8px;left:0;right:0;font-size:11px;color:var(--dim);line-height:1.6;text-align:center;height:18px;overflow:hidden}
+.lensdrop{position:fixed;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(207,227,245,.5),rgba(56,189,248,.12) 60%,transparent 75%);pointer-events:none;filter:blur(1px);transition:opacity 1.1s}
+</style>
+<script type="importmap">{"imports":{"three":"./three.module.js"}}</script>
+</head>
+<body>
+<div id="scene"></div>
+<div id="ui">
+  <h1>Poseidon's Kiss</h1>
+  <div class="sub">a rigorous study of splash dynamics &middot; keep the throne dry</div>
+  <div id="hud"></div>
+  <div id="verdict"></div>
+  <div id="controls">
+    <button id="dropBtn">DROP THE PEARL</button>
+    <button id="paperBtn">LAY THE SAFETY PAPER<small>3 uses per sitting</small></button>
+  </div>
+  <div id="log"></div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+const $=id=>document.getElementById(id);
+const params=new URLSearchParams(location.search);
+const SHOT=params.get('shot');
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.setClearColor(0x0b1220);
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+$('scene').appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x0b1220,6,14);
+const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,0.1,60);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+scene.add(new THREE.HemisphereLight(0xcfe3f5,0x0b1220,0.75));
+const key=new THREE.DirectionalLight(0xeaf4ff,2.2);
+key.position.set(2.5,5,3);key.castShadow=true;
+key.shadow.mapSize.set(1024,1024);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;
+scene.add(key);
+const rim=new THREE.DirectionalLight(0x38bdf8,0.5);rim.position.set(-3,2,-2);scene.add(rim);
+
+const PORC=new THREE.MeshStandardMaterial({color:0xe8eef5,roughness:0.25,metalness:0.05});
+const FLOOR=new THREE.MeshStandardMaterial({color:0x101a2c,roughness:0.95});
+const WATERM=new THREE.MeshStandardMaterial({color:0x0284c7,roughness:0.15,metalness:0.1,emissive:0x38bdf8,emissiveIntensity:0.18,transparent:true,opacity:0.94});
+
+/* the throne */
+const throne=new THREE.Group();
+const floor=new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.4,0.08,40),FLOOR);
+floor.position.y=-0.04;floor.receiveShadow=true;throne.add(floor);
+const pedestal=new THREE.Mesh(new THREE.CylinderGeometry(0.30,0.36,0.38,24),PORC);
+pedestal.position.y=0.19;pedestal.castShadow=true;throne.add(pedestal);
+const bowlPts=[];
+bowlPts.push(new THREE.Vector2(0.24,0.36));
+bowlPts.push(new THREE.Vector2(0.34,0.42));
+bowlPts.push(new THREE.Vector2(0.43,0.55));
+bowlPts.push(new THREE.Vector2(0.455,0.66));
+bowlPts.push(new THREE.Vector2(0.44,0.70));
+bowlPts.push(new THREE.Vector2(0.36,0.70));
+bowlPts.push(new THREE.Vector2(0.33,0.62));
+bowlPts.push(new THREE.Vector2(0.30,0.52));
+const bowl=new THREE.Mesh(new THREE.LatheGeometry(bowlPts,28),PORC);
+bowl.castShadow=true;bowl.material.side=THREE.DoubleSide;throne.add(bowl);
+const seat=new THREE.Mesh(new THREE.TorusGeometry(0.40,0.05,10,28),PORC);
+seat.rotation.x=Math.PI/2;seat.position.y=0.72;seat.scale.set(1,1.06,1);seat.castShadow=true;throne.add(seat);
+const tank=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.6,0.34),PORC);
+tank.position.set(0,0.85,-0.55);tank.castShadow=true;throne.add(tank);
+const tankLid=new THREE.Mesh(new THREE.BoxGeometry(1.08,0.07,0.4),PORC);
+tankLid.position.set(0,1.18,-0.55);throne.add(tankLid);
+const flush=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.045,0.04,12),new THREE.MeshStandardMaterial({color:0x9fb3c8,roughness:0.3,metalness:0.8}));
+flush.position.set(0.34,1.24,-0.55);throne.add(flush);
+scene.add(throne);
+
+const WATER_Y=0.62;
+const water=new THREE.Mesh(new THREE.CircleGeometry(0.325,28),WATERM);
+water.rotation.x=-Math.PI/2;water.position.y=WATER_Y;scene.add(water);
+const waterBase=water.geometry.attributes.position.array.slice();
+
+/* safety paper */
+const paper=new THREE.Mesh(new THREE.CircleGeometry(0.30,20),new THREE.MeshStandardMaterial({color:0xf5f7fa,roughness:0.9,transparent:true,opacity:0.96,side:THREE.DoubleSide}));
+paper.rotation.x=-Math.PI/2;paper.position.y=WATER_Y+0.008;paper.visible=false;scene.add(paper);
+
+/* splash particles */
+const PMAX=340;
+const pGeo=new THREE.BufferGeometry();
+pGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(PMAX*3),3));
+const pMat=new THREE.PointsMaterial({color:0x9fd9f6,size:0.035,sizeAttenuation:true,transparent:true,opacity:0.95});
+const points=new THREE.Points(pGeo,pMat);points.frustumCulled=false;scene.add(points);
+const pv=new Float32Array(PMAX*3),pl=new Float32Array(PMAX);
+function splashAt(x,z,n,power){
+  const a=pGeo.attributes.position.array;let placed=0;
+  for(let i=0;i<PMAX&&placed<n;i++){
+    if(pl[i]>0)continue;
+    a[i*3]=x;a[i*3+1]=WATER_Y;a[i*3+2]=z;
+    const th=Math.random()*Math.PI*2,r=Math.random()*0.6;
+    pv[i*3]=Math.cos(th)*r*(0.5+power*0.35);
+    pv[i*3+1]=(1.1+Math.random()*1.4)*power;
+    pv[i*3+2]=Math.sin(th)*r*(0.5+power*0.35);
+    pl[i]=0.6+Math.random()*0.5;placed++;
+  }
+  pGeo.attributes.position.needsUpdate=true;
+}
+function stepSplash(dt){
+  const a=pGeo.attributes.position.array;
+  for(let i=0;i<PMAX;i++){
+    if(pl[i]<=0)continue;
+    pl[i]-=dt;
+    a[i*3]+=pv[i*3]*dt;a[i*3+1]+=pv[i*3+1]*dt;a[i*3+2]+=pv[i*3+2]*dt;
+    pv[i*3+1]-=7.5*dt;
+    if(pl[i]<=0||a[i*3+1]<WATER_Y-0.05){pl[i]=0;a[i*3+1]=-999;}
+  }
+  pGeo.attributes.position.needsUpdate=true;
+}
+
+/* ripple rings */
+const rings=[];
+function ripple(x,z,big){
+  const m=new THREE.Mesh(new THREE.TorusGeometry(0.06,0.008,6,26),new THREE.MeshBasicMaterial({color:0x9fd9f6,transparent:true,opacity:0.85}));
+  m.rotation.x=Math.PI/2;m.position.set(x,WATER_Y+0.01,z);
+  scene.add(m);rings.push({m:m,t:0,big:big});
+}
+function stepRings(dt){
+  for(let i=rings.length-1;i>=0;i--){
+    const r=rings[i];r.t+=dt;
+    const s=1+r.t*(r.big?9:5);r.m.scale.set(s,s,1);
+    r.m.material.opacity=Math.max(0,0.85-r.t*1.3);
+    if(r.t>0.8){scene.remove(r.m);r.m.geometry.dispose();r.m.material.dispose();rings.splice(i,1);}
+  }
+}
+
+/* game state - logic mirrors the 2D original */
+const S={drops:0,kissed:0,paper:3,sitting:1,best:0,over:false,busy:false,paperArmed:false};
+const VERDICTS_DRY=['A silent entry. Greg Louganis approves.','Ripples, but the throne stays dry.','Poseidon sleeps.','Minimal displacement. Textbook.'];
+const VERDICTS_WET=['THE KISS. Cold. Judgmental.','Splash contact. Poseidon claims another.','Direct hit. The sea remembers.','Neptune sends his regards.'];
+function hud(){$('hud').innerHTML='SITTING <b>'+S.sitting+'</b> &middot; DROPS <b>'+S.drops+'</b> &middot; KISSES SUFFERED <b>'+S.kissed+'</b> &middot; PAPER LEFT <b>'+S.paper+'</b> &middot; BEST DRY STREAK <b>'+S.best+'</b>';}
+function log(t,c){const d=document.createElement('span');d.textContent=t;if(c)d.style.color=c;$('log').prepend(d);while($('log').children.length>1)$('log').lastChild.remove();}
+
+let pearl=null;
+function drop(usePaper){
+  if(S.over||S.busy)return;
+  S.busy=true;
+  const startX=(Math.random()*0.9-0.45),startZ=(Math.random()*0.5-0.25);
+  const m=new THREE.Mesh(new THREE.SphereGeometry(0.085,14,12),new THREE.MeshStandardMaterial({color:0xf5f7fa,roughness:0.15,metalness:0.35}));
+  m.position.set(startX,2.3,startZ);m.castShadow=true;scene.add(m);
+  pearl={m:m,vy:-0.6-Math.random()*0.8,usePaper:usePaper};
+}
+function lensDrops(n){
+  for(let i=0;i<n;i++){
+    const d=document.createElement('div');d.className='lensdrop';
+    const s=24+Math.random()*60;
+    d.style.width=s+'px';d.style.height=s+'px';
+    d.style.left=(8+Math.random()*84)+'vw';d.style.top=(8+Math.random()*60)+'vh';
+    document.body.appendChild(d);
+    requestAnimationFrame(()=>{d.style.opacity='0';});
+    setTimeout(()=>d.remove(),1300);
+  }
+}
+function resolveDrop(hit){
+  const energy=hit.vy*(1-hit.centerDist*0.8);
+  const safe=hit.usePaper?energy<9:energy<4.5;
+  ripple(hit.x,hit.z,!safe);
+  ripple(hit.x*0.8,hit.z*0.8,false);
+  splashAt(hit.x,hit.z,safe?8:34,safe?0.5:1.6);
+  if(hit.usePaper){paper.visible=false;S.paperArmed=false;splashAt(hit.x,hit.z,10,0.35);}
+  if(safe){S.best=S.best+1;$('verdict').textContent=VERDICTS_DRY[Math.floor(Math.random()*VERDICTS_DRY.length)];log('Drop '+S.drops+': clean entry.'+(hit.usePaper?' The paper took one for the team.':''),'var(--accent)');}
+  else{
+    S.kissed++;S.best=0;lensDrops(5);
+    shakeT=0.5;
+    $('verdict').textContent=VERDICTS_WET[Math.floor(Math.random()*VERDICTS_WET.length)];
+    log('Drop '+S.drops+': KISSED.','#f87171');
+  }
+  hud();
+  S.busy=false;
+  if(S.drops>=8)end();
+}
+function end(){
+  S.over=true;
+  const msg=S.kissed===0?'A PERFECT SITTING. Eight drops, zero kisses. Poseidon files a formal complaint.':S.kissed<=2?'A dignified sitting. Only '+S.kissed+' kiss(es). The sea respects restraint.':'A catastrophic sitting. '+S.kissed+' kisses. The mirror of the water shows only your own poor planning.';
+  $('verdict').textContent=msg;log(msg,S.kissed<=2?'var(--accent)':'#f87171');
+  const b=document.createElement('button');b.textContent='NEW SITTING';
+  b.onclick=()=>{Object.assign(S,{drops:0,kissed:0,paper:3,sitting:S.sitting+1,best:0,over:false,busy:false,paperArmed:false});paper.visible=false;$('verdict').textContent='';$('log').innerHTML='';hud();b.remove();};
+  $('controls').appendChild(b);
+}
+$('dropBtn').onclick=()=>drop(false);
+$('paperBtn').onclick=()=>{
+  if(S.paper>0&&!S.over&&!S.busy){
+    S.paper--;S.paperArmed=true;paper.visible=true;hud();
+    log('Safety paper deployed. The next drop is cushioned.');
+    drop(true);
+  }else if(!S.over){log('Out of paper. Nature finds a way.');}
+};
+addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='Enter'){e.preventDefault();drop(S.paperArmed);}});
+
+/* camera + loop */
+let timeNow=0,shakeT=0;
+let camAng=0.0;
+function step(dt){
+  timeNow+=dt;
+  if(shakeT>0)shakeT-=dt;
+  /* pearl fall */
+  if(pearl){
+    pearl.vy-=6*dt;
+    pearl.m.position.y+=pearl.vy*dt;
+    pearl.m.rotation.x+=3*dt;
+    if(pearl.m.position.y<=WATER_Y+0.05){
+      const hit={x:pearl.m.position.x,z:pearl.m.position.z,vy:Math.abs(pearl.vy)*1.35,centerDist:Math.min(1,Math.hypot(pearl.m.position.x,pearl.m.position.z)/0.45),usePaper:pearl.usePaper};
+      scene.remove(pearl.m);pearl.m.geometry.dispose();pearl.m.material.dispose();pearl=null;
+      resolveDrop(hit);
+    }
+  }
+  stepSplash(dt);stepRings(dt);
+  /* water wobble */
+  const wp=water.geometry.attributes.position.array;
+  for(let i=0;i<wp.length;i+=3){
+    const x=waterBase[i],y=waterBase[i+1];
+    wp[i+2]=Math.sin(x*9+timeNow*2.2)*0.006+Math.cos(y*7+timeNow*1.7)*0.006;
+  }
+  water.geometry.attributes.position.needsUpdate=true;
+  if(S.paperArmed){paper.rotation.z+=dt*0.1;paper.position.y=WATER_Y+0.008+Math.sin(timeNow*2)*0.004;}
+  /* slow orbit drift */
+  camAng=Math.sin(timeNow*0.12)*0.35;
+  const shx=shakeT>0?(Math.random()-0.5)*shakeT*0.15:0,shy=shakeT>0?(Math.random()-0.5)*shakeT*0.1:0;
+  camera.position.set(Math.sin(camAng)*2.9+shx,1.55+shy,Math.cos(camAng)*2.9);
+  camera.lookAt(0,0.62,0);
+}
+function frame(ts){
+  requestAnimationFrame(frame);
+  const dt=Math.min(0.05,(ts-(frame.last||ts))/1000)||0.016;frame.last=ts;
+  step(dt);
+  renderer.render(scene,camera);
+}
+hud();
+requestAnimationFrame(frame);
+
+if(SHOT==='drop'){drop(false);}
+if(SHOT==='splash'){const h={x:0.1,z:0,vy:6,centerDist:0.5,usePaper:false};resolveDrop(h);S.drops=1;hud();}
+const FF=parseFloat(params.get('t')||'0');
+if(FF>0){for(let i=0;i<FF*60;i++)step(1/60);}
+window.__PK__={drop:drop,getState:function(){return S;}};
+</script>
+</body>
+</html>
